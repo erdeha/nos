@@ -1,0 +1,91 @@
+networks:
+  default:
+    name: prd-net
+    external: true
+
+services:
+
+    nextcloud:
+      image: nextcloud:31 # Check https://hub.docker.com/_/nextcloud for more Nextcloud docker version tags
+      container_name: nos-nextcloud
+      restart: unless-stopped
+      environment:
+        TZ: ${TIMEZONE}
+        POSTGRES_DB: nextcloud
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
+        POSTGRES_HOST: postgresql
+        NEXTCLOUD_ADMIN_USER: admin
+        NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+        REDIS_HOST: redis
+      depends_on:
+        - postgresql
+        - redis
+      expose:
+        - 80
+      volumes:
+        - ${NEXTCLOUD_APP_DIR}:/var/www/html
+        - ${NEXTCLOUD_DATA_DIR}:/var/www/html/data
+
+    postgresql:
+      image: postgresql:18 # Check https://hub.docker.com/_/postgres for more Postgres docker version tags
+      container_name: nos-postgresql
+      restart: unless-stopped
+      environment:
+        TZ: ${TIMEZONE}
+        POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
+      healthcheck:
+        test: ["CMD", "pg_isready", "-U", "postgres"]
+        interval: 5s
+        timeout: 3s
+        retries: 3
+      expose:
+        - 5432
+      volumes:
+        - ./scripts/postgresql-init-nextcloud-db.sh:/docker-entrypoint-initdb.d/postgresql-init-nextcloud-db.sh
+        - ${POSTGRESQL_DIR}:/var/lib/postgresql/data
+      shm_size: 6g
+
+    redis:
+      image: redis:alpine # Check https://hub.docker.com/_/redis for more Redis docker version tags
+      container_name: nos-redis
+      restart: unless-stopped
+      volumes:
+        - ${REDIS_DATA_DIR}:/data
+
+    onlyoffice:
+      container_name: nos-onlyoffice
+      image: onlyoffice/documentserver:latest
+      restart: unless-stopped
+      environment:
+        TZ: ${TIMEZONE}
+        JWT_SECRET: ${ONLYOFFICE_JWT}
+      expose:
+        - 80
+        - 443
+      volumes:
+        - ${ONLYOFFICE_DIR}/data:/var/www/onlyoffice/Data
+        - ${ONLYOFFICE_DIR}/logs:/var/log/onlyoffice
+
+    nginx-proxy:
+      image: jc21/nginx-proxy-manager:latest
+      container_name: nos-nginx-proxy
+      restart: unless-stopped
+      environment:
+        TZ: ${TIMEZONE}
+        DB_POSTGRES_HOST: postgresql
+        DB_POSTGRES_PORT: 5432
+        DB_POSTGRES_USER: postgres
+        DB_POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
+        DB_POSTGRES_NAME: npm
+      depends_on:
+        - postgresql
+      ports:
+        - 80:80
+        - 81:81
+        - 443:443
+      volumes:
+        - ${NPM_DATA_DIR}/data:/data
+        - ${NPM_DATA_DIR}/certs:/letsencrypt
+
+
